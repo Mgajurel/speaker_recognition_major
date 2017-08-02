@@ -60,8 +60,9 @@ def mffcc_from_folder(folderpath):
         fs, signal = wavfile.read(path)
         mfcc_feat = mfcc(signal, fs)
         features = numpy.vstack((features, mfcc_feat))
-        for row in range(featuers.shape[0]):
-            target[row] = wav_dict[username]
+        for row in range(features.shape[0]):
+            target = numpy.append(target, [wav_dict[username]])
+            # target[row]  wav_dict[username]
             row += 1
 
     return features, target , users
