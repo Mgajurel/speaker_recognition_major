@@ -41,7 +41,8 @@ def mffcc_from_folder(folderpath):
         return
 
     features = numpy.empty(shape=[0,13])
-    target = numpy.empty(shape=[0],dtype=int)
+    # target = numpy.empty(shape=[0],dtype=int)
+    target = []
     users = []
     wav_dict = {}
     col = 0
@@ -61,11 +62,12 @@ def mffcc_from_folder(folderpath):
         mfcc_feat = mfcc(signal, fs)
         features = numpy.vstack((features, mfcc_feat))
         for row in range(features.shape[0]):
-            target = numpy.append(target, [wav_dict[username]])
+            target.append(wav_dict[username])
+            # target = numpy.append(target, [wav_dict[username]])
             # target[row]  wav_dict[username]
-            row += 1
+            # row += 1
 
-    return features, target , users
+    return features, numpy.array(target) , users
 
 def fbank(signal,samplerate=16000,winlen=0.025,winstep=0.01,
           nfilt=26,nfft=512,lowfreq=0,highfreq=None,preemph=0.97,
