@@ -23,8 +23,7 @@ def print_label(text, character="*"):
     star = int((80-len(text))/2)
     print(character*star, text, character*star)
 
-def predict_with_model(mlp, audioname, verbose=True):
-    audiopath = "files/test/wav/"+audioname
+def predict_with_model(mlp, audiopath, verbose=True):
     fs, signal = wavfile.read(audiopath)
     signal = remove_silence(fs, signal)    
     feature = mfcc(signal, fs)
