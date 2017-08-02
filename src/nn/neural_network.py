@@ -23,6 +23,27 @@ def print_label(text, character="*"):
     star = int((80-len(text))/2)
     print(character*star, text, character*star)
 
+<<<<<<< HEAD
+=======
+def predict_with_model(mlp, audiopath, verbose=True):
+    fs, signal = wavfile.read(audiopath)
+    signal = remove_silence(fs, signal)    
+    feature = mfcc(signal, fs)
+    output = mlp.predict(feature)
+    counts = np.bincount(output)
+
+    accuracy = (np.amax(counts)/output.shape[0])
+
+    message = "Prediction output\n"
+    message += "Count: %s" %np.array_str(counts)
+    message += "\nAccuracy = %.2f%%" %(accuracy*100)
+
+    if verbose:
+        print(message)
+
+    return counts
+
+>>>>>>> bbd0e0c42edc4b6c7eee30a97a6def5bb89144cb
 class NeuralNetwork:
     def __init__(self, filepath="files", is_delta_mode=False, verbose=False):
         self.verbose = verbose
