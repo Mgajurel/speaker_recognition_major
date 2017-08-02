@@ -40,7 +40,7 @@ def predict_with_model(mlp, audioname, verbose=True):
     if verbose:
         print(message)
 
-    return count
+    return counts
 
 class NeuralNetwork:
     def __init__(self, filepath="files", is_delta_mode=False, verbose=False):
