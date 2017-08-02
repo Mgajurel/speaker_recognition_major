@@ -23,8 +23,6 @@ def print_label(text, character="*"):
     star = int((80-len(text))/2)
     print(character*star, text, character*star)
 
-<<<<<<< HEAD
-=======
 def predict_with_model(mlp, audiopath, verbose=True):
     fs, signal = wavfile.read(audiopath)
     signal = remove_silence(fs, signal)    
@@ -43,7 +41,6 @@ def predict_with_model(mlp, audiopath, verbose=True):
 
     return counts
 
->>>>>>> bbd0e0c42edc4b6c7eee30a97a6def5bb89144cb
 class NeuralNetwork:
     def __init__(self, filepath="files", is_delta_mode=False, verbose=False):
         self.verbose = verbose
