@@ -1,8 +1,3 @@
-"""
-MFCC - Mel Frequency Cepstrum Co-efficient
-To get the feature from the audio signal
-"""
-
 import numpy as np
 import decimal
 import math
