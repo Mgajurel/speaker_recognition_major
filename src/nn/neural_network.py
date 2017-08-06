@@ -3,7 +3,9 @@ import os
 import numpy as np
 import pickle
 from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn import decomposition
 # import alsaaudio, wave
 
 if __name__ == '__main__':
@@ -12,238 +14,186 @@ if __name__ == '__main__':
 
 from feature.MFCC import mfcc
 from feature.MFCC import delta
+from feature.MFCC import mffcc_from_folder
 from nn.recorder import record_to_file
 
-from feature.sigproc import remove_silence
+from feature.sigproc import remove_silence, butter_highpass_filter
 from feature.sigproc import silence_zone
+import scipy.stats as stats
 
 debug = True
+pca = decomposition.PCA(n_components=10)
 
 def print_label(text, character="*"):
     star = int((80-len(text))/2)
     print(character*star, text, character*star)
 
-class NeuralNetwork:
-    def __init__(self, filepath="files", is_delta_mode=False, verbose=False):
-        self.verbose = verbose
-        self.message = ""
-        self.filepath = filepath
-        self.is_delta = is_delta_mode
+def show_confusion_matrix(mlp, X_test, y_test, users):
 
-        # Load files
-        try:
-            self.NN = pickle.load(open(self.filepath+'/model.pkl','rb'))
+    predictions = mlp.predict(X_test)
 
-            # Load user names
-            userList = open(self.filepath+"/metadata.txt", "r")
-            self.users = userList.read().split('\n')
-            userList.close()
-        except FileNotFoundError:
-            print("Model and metadata.txt not found.")
+    from sklearn.metrics import classification_report,confusion_matrix
 
-        self.mlp = MLPClassifier(hidden_layer_sizes=(50, 50, 50), activation = 'logistic')
+    message = "Prediction outcomes"
+    message += "\n"
+    message += classification_report(y_test, predictions, target_names=users)
+    message += "\nconfusion_matrix\n"
+    message += np.array_str(confusion_matrix(y_test, predictions))
 
-        if self.verbose:
-            print("Delta Mode enable = ", is_delta_mode)
-    # Train the network and generate model.pkl file and csv file
-    def train(self):
-        self.message = "Training result:"
-        # File path
-        wavpath=self.filepath+"/wav"
-        if self.verbose:
-            print("Wav files from: " + wavpath)
+    return message
 
-        # List all the filenames of wav directory
-        wav_files = [f for f in os.listdir(wavpath) if f.endswith('.wav')]
-        n = len(wav_files)
-        if(n < 1):
-            assert("No wav files found at " + wavpath + ". Cancelling operation")
-            return
+def train(folderpath="files/wav", model_name="model.pkl", layer_sizes=(512, 512), verbose=False):
+    print("Training started")
 
-        features = None
-        target = None
-        is_firstrun = True
-        row = 0
-        col = 0
-        userList = open(self.filepath+"/metadata.txt", "w")
-        wav_dic = {}
+    features, target, users = mffcc_from_folder(folderpath)
+    print("Features before PCA")
+    print("Feature:", features.shape)
+    print(features)
 
-        # Loop until all files are converted to csv
-        for audio in wav_files:
-            fs, signal = wavfile.read(wavpath+"/"+audio)
-            # remove silence
-            signal = remove_silence(fs, signal)
-            # Extract features from audio signal
-            mfcc_feat = mfcc(signal, fs)
-            if self.is_delta:
-                mfcc_feat = delta(mfcc_feat, 2)
-            # save feature as csv files for debugging
-            np.savetxt(self.filepath+"/csv/"+audio[7:-4]+".csv", mfcc_feat, fmt='%.8f', delimiter=',')
+    # features = StandardScaler().fit_transform(features)
+    print("Calculate PCA of the features")
+    pca.fit(features)
+    features = pca.transform(features)
+    print("Features after PCA")
+    print("Feature:", features.shape)
+    print(features)
 
-            # If user is not already in the list/dictionary add them
-            try:
-                wav_dic[audio[0:-6]]
-            except:
-                userList.write(audio[0:-6]+"\n")
-                wav_dic[audio[0:-6]] = col
-                col += 1
-            if self.verbose:
-                print("\nFile:", audio)
-                print("Feature: ", mfcc_feat.shape)
+    # Features and target are made now train them
+    X_train, X_test, y_train, y_test = train_test_split(features, target,test_size=0.33, random_state=42)
 
-            if is_firstrun:
-                features = mfcc_feat
-                target = [0] * mfcc_feat.shape[0]
-                for i in range(mfcc_feat.shape[0]):
-                    target[row] = wav_dic[audio[0:-6]]
-                    row += 1
-                is_firstrun = False
-            else:
-                features = np.vstack((features, mfcc_feat))
-                for i in range(mfcc_feat.shape[0]):
-                    target = np.append(target, [wav_dic[audio[0:-6]]])
-                    row += 1
-        userList.write("Anonymous\n")
-        userList.close()
+    mlp = MLPClassifier(hidden_layer_sizes=layer_sizes, activation = 'logistic')
+    print("Training the model")
+    mlp.fit(X_train, y_train)
 
-        # Load user names
-        userList = open(self.filepath+"/metadata.txt", "r")
-        self.users = userList.read().split("\n")
-        userList.close()
+    message =""
+    if verbose:
+        message = show_confusion_matrix(mlp, X_test, y_test, users)
 
-        features = features.astype(np.float)
+    # Training is now complete, save the model
+    userList = open("files/metadata.txt", "w")
+    for user in users:
+        # print(user)
+        userList.write(user + '\n')
+    userList.close()
+    pickle.dump(mlp, open('files/'+model_name,'wb'))
+    pickle.dump(pca, open('files/pca.pkl', 'wb'))
 
-        if self.verbose:
-            print_label("Data sets", character="-")
-            print("Features:", features.shape)
-            print(features)
-            print("\nTarget:", target.shape)
-            print(target)
+    if verbose:
+        message += "\n%s is now saved"%model_name
+    print("Training complete")
 
-            print_label("Neural Network modelling", character="-")
-            print("Modelling started, this may take a while")
+    return message
 
-        # Features and target are made now train them
-        from sklearn.model_selection import train_test_split
-        X_train, X_test, y_train, y_test = train_test_split(features, target,test_size=0.33, random_state=42)
+def predict(model_name="model.pkl", test_path="files/test/wav", verbose=False, threshold=0.95):
+    NN = pickle.load(open("files/"+model_name, 'rb'))
+    pca = pickle.load(open('files/pca.pkl', 'rb'))
+    userList = open("files/metadata.txt", 'r')
+    users = userList.read().split('\n')
+    userList.close()
+    message = ""
 
+    wav_files = [f for f in os.listdir(test_path) if f.endswith('.wav')]
 
-        self.mlp.fit(X_train,y_train)
-        self.message += "\nTotal iteration run: %d" %self.mlp.n_iter_
+    for audio in wav_files:
+        message += "\nThe audio file is %s\n" %audio
+        fs, sig = wavfile.read(test_path+'/'+audio)
+        filtered_sig = butter_highpass_filter(sig,10,fs)
+        filtered_sig = filtered_sig.astype(int)
+        # filtered_sig
+        filtered_sig = filtered_sig[1000:]
 
-        predictions = self.mlp.predict(X_test)
+        filtered_sig = remove_silence(fs, filtered_sig)
+        mfcc_feat = mfcc(filtered_sig, fs)
 
-        from sklearn.metrics import classification_report,confusion_matrix
-        self.message += "\n"
-        self.message += classification_report(y_test, predictions, target_names=self.users)
-        self.message += "\nconfusion_matrix\n"
-        self.message += np.array_str(confusion_matrix(y_test, predictions))
+        mfcc_feat = pca.transform(mfcc_feat)
 
+        output = NN.predict(mfcc_feat)
 
-        # Training is now complete, save the model
-        pickle.dump(self.mlp, open(self.filepath+'/model.pkl','wb'))
+        message += get_result_from_output(output, users, verbose, threshold) + "\n"
+    return message
 
-        self.message += "\nModel is saved to %s/model.pkl" %self.filepath
+def real_time_predict(model_name="model.pkl", speech_len="3", verbose=False, threshold=0.95):
+    NN = pickle.load(open("files/"+model_name, 'rb'))
+    pca = pickle.load(open('files/pca.pkl', 'rb'))
+    userList = open("files/metadata.txt", 'r')
+    users = userList.read().split('\n')
+    userList.close()
+    message = ""
 
-        if self.verbose:
-            print(self.message)
+    record_to_file("test.wav", RECORD_SECONDS=speech_len)
+    fs, sig = wavfile.read("test.wav")
+    filtered_sig = butter_highpass_filter(sig,10,fs)
+    filtered_sig = filtered_sig.astype(int)
+    # filtered_sig
 
-        # Load files
-        self.NN = pickle.load(open(self.filepath+'/model.pkl','rb'))
+    filtered_sig = filtered_sig[1000:]
 
-        # Load user names
-        userList = open(self.filepath+"/metadata.txt", "r")
-        self.users = userList.read().split('\n')
-        userList.close()
+    filtered_sig = remove_silence(fs, filtered_sig)
+    feature = mfcc(filtered_sig, fs)
+    print("mfcc:",feature.shape)
+    feature = pca.transform(feature)
+    print("mfcc_pca:",feature.shape)
+    output = NN.predict(feature)
 
-        return self.message
-    # predict the output from given test audio files
-    def test_predict(self):
-        self.message = "Prediction result:"
-        try:
-            # Load files
-            self.NN = pickle.load(open(self.filepath+'/model.pkl','rb'))
-            # Load user names
-            userList = open(self.filepath+"/metadata.txt", "r")
-            self.users = userList.read().split('\n')
-            userList.close()
+    return get_user_from_output(output, users)
 
-            if self.verbose:
-                print("Classes", self.NN.classes_)
-                print("Output", self.NN.n_outputs_)
-                print("Users are ", self.users)
-        except FileNotFoundError:
-            self.message += "\nmodel.pkl or metadata.txt file not found, make sure you have trained beforehand"
-            return self.message
+def predict_from_file(filename="test.wav"):
+    NN = pickle.load(open("files/model.pkl", 'rb'))
+    userList = open("files/metadata.txt", 'r')
+    users = userList.read().split('\n')
+    userList.close()
+    message = ""
 
-        try:
-            wav_path = self.filepath+"/test/wav"
-            wav_files = [f for f in os.listdir(wav_path) if f.endswith('.wav')]
-            if(len(wav_files) < 1):
-                return
-                assert("No test wav files found at %s, Cancel operation" %wav_path)
+    fs, sig = wavfile.read(filename)
+    filtered_sig = butter_highpass_filter(sig,10,fs)
+    filtered_sig = filtered_sig.astype(int)
+    # filtered_sig
+    filtered_sig = filtered_sig[1000:]
 
-            self.message += "\nTest file path: %s/test" %wav_path
+    filtered_sig = remove_silence(fs, filtered_sig)
+    mfcc_feat = mfcc(filtered_sig, fs)
 
-            for wav_file in wav_files:
-                self.message += "\n\nGiven wav file: %s" %wav_file
-                fs, signal = wavfile.read(wav_path+"/"+ wav_file)
-                # Compute output from feature
-                output = self.predict(signal, fs)
-                self.get_label(output)
+    mfcc_feat = pca.transform(mfcc_feat)
 
-        except (FileNotFoundError, IOError):
-                self.message += "\nError file not found"
-                return self.message
+    output = NN.predict(mfcc_feat)
 
-        if self.verbose:
-            print(self.message)
+    return self.get_user_from_output(output, users)
 
-        return self.message
-    def predict(self, signal, fs):
-        # remove silence
-        signal = remove_silence(fs, signal)
-        # signal = StandardScaler().fit_transform(signal)
-        # Extract feature
-        mfcc_feat = mfcc(signal, fs)
-        if self.is_delta:
-            mfcc_feat = delta(mfcc_feat, 2)
+def get_user_from_output(output, users, threshold=0.95):
+    counts = np.bincount(output)
+    scores = stats.zscore(counts)
+    z_score = scores[np.argmax(counts)]
+    z_cdf = stats.norm.cdf(z_score)
+    user = users[np.argmax(counts)]
+    hcr = counts[np.argmax(counts)]/np.sum(counts)
+    print("Counts:",np.array_str(counts))
+    print("HMR: %.2f%%" %(hcr*100))
+    print("Confidence level: %.2f%%" %(z_cdf*100))
+    if z_cdf > threshold:
+        return user
+    else:
+        return "Anynomous"
 
-        return self.NN.predict(mfcc_feat)
-    # Real time prediction
-    def prediction(self, noise_level=230000):
-        self.message = "Realtime prediction result"
+def get_result_from_output(output, users, verbose=False, threshold=0.95):
+    counts = np.bincount(output)
+    scores = stats.zscore(counts)
+    z_score = scores[np.argmax(counts)]
+    z_cdf = stats.norm.cdf(z_score)
+    user = users[np.argmax(counts)]
+    hcr = counts[np.argmax(counts)]/np.sum(counts)
+    message = ""
+    if verbose:
+        message = "Outcomes"
+        message += "\nThe counts are %s" %np.array_str(counts)
+        message += "\nConfidence level: %.2f%%" %(z_cdf*100)
+        message += "\nThe Highest match ratio: %.2f%%\n" %(hcr*100)
 
-        record_to_file(filename="test.wav",RECORD_SECONDS=2)
-        fs, signal = wavfile.read("test.wav")
-        os.remove("test.wav")
+    if z_cdf > threshold:
+        message += "The user is: %s\n" %user
+    else:
+        message += "Sorry, I'm unable to recognize you"
 
-        if(silence_zone(signal, noise_level, verbose=self.verbose)):
-            self.message += "\nSilent"
-        else:
-            output = self.predict(signal, fs)
-            self.get_label(output)
-        return self.message
-    # Get a label from the given output of prediction
-    def get_label(self, output,min_accuracy=0.6):
-        counts = np.bincount(output)
-        accuracy = (np.amax(counts)/output.shape[0])
-        if self.verbose:
-            self.message += "\nCounts: %s" %np.array_str(counts)
-            self.message += "\nAccuracy: %.2f%%" %(accuracy*100)
-        if accuracy < min_accuracy:
-            self.message += "\nWho the fuck are you"
-        else:
-            self.message += "\nThe user is %s" %self.users[np.argmax(counts)]
-
-        return self.message
-    # set for delta mode
-    def set_delta(self, delta):
-        self.is_delta = delta
-    # To set verbose mode to display additional information to console
-    def set_verbose(self, verbose):
-        self.verbose = verbose
-
+    return message
 
 def record_wav(filename, time=7):
     # record_to_file(filename="test.wav",RECORD_SECONDS=0.5)

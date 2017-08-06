@@ -1,9 +1,10 @@
-from __future__ import division
+# from __future__ import division
 import numpy
 from feature import sigproc
 from scipy.fftpack import dct
+from sklearn.preprocessing import normalize
 
-def mfcc(signal,samplerate=16000,winlen=0.025,winstep=0.01,numcep=13,
+def mfcc(signal,samplerate=8000,winlen=0.025,winstep=0.01,numcep=13,
          nfilt=26,nfft=512,lowfreq=0,highfreq=None,preemph=0.97,ceplifter=22,appendEnergy=True,
          winfunc=lambda x:numpy.ones((x,))):
     """Compute MFCC features from an audio signal.
@@ -23,7 +24,7 @@ def mfcc(signal,samplerate=16000,winlen=0.025,winstep=0.01,numcep=13,
     :param winfunc: the analysis window to apply to each frame. By default no window is applied.
     :returns: A numpy array of size (NUMFRAMES by numcep) containing features. Each row holds 1 feature vector.
     """
-
+    signal = normalize(signal[:, numpy.newaxis], axis=0).ravel()
     feat,energy = fbank(signal,samplerate,winlen,winstep,nfilt,nfft,lowfreq,highfreq,preemph,winfunc)
     feat = numpy.log(feat)
     feat = dct(feat, type=2, axis=1, norm='ortho')[:,:numcep]
@@ -32,6 +33,7 @@ def mfcc(signal,samplerate=16000,winlen=0.025,winstep=0.01,numcep=13,
     return feat
 
 def mffcc_from_folder(folderpath):
+    print("Calculating mfcc from folder path")
     from scipy.io import wavfile
     import os
     wav_files = [f for f in os.listdir(folderpath) if f.endswith('.wav')]
@@ -41,31 +43,28 @@ def mffcc_from_folder(folderpath):
         return
 
     features = numpy.empty(shape=[0,13])
-    # target = numpy.empty(shape=[0],dtype=int)
     target = []
     users = []
     wav_dict = {}
     col = 0
     row = 0
-
+    print("Loading audio from the folder")
     for audio in wav_files:
+
         path = folderpath+"/"+audio
         username = audio[2:-4]
-        if username in wav_dict:
-            pass
-        else:
+
+        if not (username in wav_dict):
             users.append(username)
             wav_dict[username] = col
             col += 1
-
         fs, signal = wavfile.read(path)
+        signal = sigproc.remove_silence(fs, signal)
         mfcc_feat = mfcc(signal, fs)
-        features = numpy.vstack((features, mfcc_feat))
-        for row in range(features.shape[0]):
+        mfcc_feat = mfcc_feat[0:200]
+        for row in range(mfcc_feat.shape[0]):
             target.append(wav_dict[username])
-            # target = numpy.append(target, [wav_dict[username]])
-            # target[row]  wav_dict[username]
-            # row += 1
+        features = numpy.vstack((features, mfcc_feat))
 
     return features, numpy.array(target) , users
 

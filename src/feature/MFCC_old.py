@@ -29,7 +29,7 @@ class MFCCExtractor(object):
             else:
                 print(message)
 
-    def extract(self, signal, filename):
+    def extract(self, signal):
         if signal.ndim > 1:
             self.dprint("INFO: Input signal has more than 1 channel; the channels will be averaged.")
             signal = mean(signal, axis=1)
@@ -89,7 +89,7 @@ class MFCCExtractor(object):
         mfcc *= lift
         if self.appendEnergy:
             mfcc[:,0] = np.log(energy) # replace first cepstral coefficient with log of frame energy
-        np.savetxt(filename, mfcc, fmt='%.8f', delimiter=',')
+        return mfcc
 
     def hz_to_mel(self, hz):
         """Convert a value in Hertz to Mels

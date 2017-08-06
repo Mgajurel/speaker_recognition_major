@@ -7,6 +7,9 @@ import logging
 import numpy as np
 
 import scipy.io.wavfile as wavfile
+from scipy import signal
+import pyaudio
+import wave
 
 def round_half_up(number):
     return int(decimal.Decimal(number).quantize(decimal.Decimal('1'), rounding=decimal.ROUND_HALF_UP))
@@ -183,3 +186,50 @@ def task(fpath, new_fpath):
     signal_out = remove_silence(fs, signal)
     wavfile.write(new_fpath, fs, signal_out)
     return fpath
+
+def record_to_file(filename,FORMAT = pyaudio.paInt16, CHANNELS = 1, RATE = 8000,
+                    CHUNK = 1024, RECORD_SECONDS=1):
+    audio = pyaudio.PyAudio()
+
+    # start Recording
+    stream = audio.open(format=FORMAT, channels=CHANNELS,
+                    rate=RATE, input=True,
+                    frames_per_buffer=CHUNK)
+    frames = []
+
+    for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+        data = stream.read(CHUNK)
+        frames.append(data)
+
+    # stop Recording
+    stream.stop_stream()
+    stream.close()
+    audio.terminate()
+
+    waveFile = wave.open(filename, 'wb')
+    waveFile.setnchannels(CHANNELS)
+    waveFile.setsampwidth(audio.get_sample_size(FORMAT))
+    waveFile.setframerate(RATE)
+    waveFile.writeframes(b''.join(frames))
+    waveFile.close()
+
+def record_and_save(filename, newpath, LENGTH=5000):
+    record_to_file(filename, RECORD_SECONDS=LENGTH)
+    fs, sig = wavfile.read(filename)
+    filtered_sig = butter_highpass_filter(sig,10,fs)
+    filtered_sig = filtered_sig.astype(int)
+    filtered_sig = filtered_sig[1000:]
+
+    filtered_sig = remove_silence(fs, filtered_sig)
+    wavfile.write(newpath, fs, filtered_sig)
+
+def butter_highpass(cutoff, fs, order=5):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = signal.butter(order, normal_cutoff, btype='high', analog=False)
+    return b, a
+
+def butter_highpass_filter(data, cutoff, fs, order=5):
+    b, a = butter_highpass(cutoff, fs, order=order)
+    y = signal.filtfilt(b, a, data)
+    return y
